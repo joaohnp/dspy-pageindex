@@ -23,8 +23,8 @@ def get_openrouter_lm(model: str):
         api_key=os.getenv("OPEN_ROUTER_API_KEY"),
         max_tokens=80000,
         cache=False,
-        temperature=1.0,
-        extra_headers={"streaming": "True"},
+        temperature=0.2,
+        extra_headers={"streaming": "False"},
     )
     return lm
 
