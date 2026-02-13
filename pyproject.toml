@@ -1,0 +1,49 @@
+[project]
+name = "dspy-pageindex"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "dspy>=3.1.2",
+    "pydantic>=2.11.7",
+    "pypdf2>=3.0.1",
+]
+
+[dependency-groups]
+dev = ["ruff>=0.11.0", "taskipy>=1.14.1"]
+
+[tool.ruff]
+line-length = 79
+extend-exclude = ['migrations']
+
+[tool.ruff.format]
+preview = true
+quote-style = "double"
+
+[tool.ruff.lint]
+preview = true
+select = [
+    "I",
+    "F",
+    "E",
+    "W",
+    "PL",
+    "PT",
+    "N",
+    "FURB",
+    "FAST",
+    "RUF",
+    "ARG",
+    "PTH",
+]
+ignore = ["PLR0914"]
+fixable = ["ALL"]
+
+[tool.taskipy.tasks]
+lint = "uv run ruff check; uv run ruff format --check"
+format = "uv run ruff check --fix; uv run ruff format"
+dev = "uv run fastapi dev app/main.py"
+uvicorn = "uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000"
+models = "uv run -m app.utils.create_models"
+post_models = "uv run ruff format app/utils/create_models.py; uv run ruff check --fix app/models/models.py"
