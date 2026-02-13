@@ -15,6 +15,7 @@ from llm_utils import (
     assign_page_indices,
     detect_toc,
     extract_toc,
+    generate_summary,
     generate_toc,
     transform_toc,
 )
@@ -64,7 +65,7 @@ def process_pdf(
     max_toc_check_pages: int = 20,
     max_pages_per_node: int = 10,
     add_node_ids: bool = True,
-    add_summaries: bool = False,
+    add_summaries: bool = True,
     add_text: bool = False,
 ) -> ProcessingResult:
     """
@@ -88,7 +89,7 @@ def process_pdf(
         >>> print(result.to_json())
     """
     # Configure LLM
-    lm = get_openrouter_lm("openrouter/openrouter/aurora-alpha")
+    lm = get_openrouter_lm("openrouter/openai/gpt-4o-mini")
     dspy.settings.configure(lm=lm)
 
     pdf_path = Path(pdf_path)
@@ -119,8 +120,15 @@ def process_pdf(
     if add_node_ids:
         add_node_ids_to_tree(structure)
 
+    if add_summaries:
+        add_text = True
+
     if add_text:
         add_node_text(structure, pages)
+
+    if add_summaries:
+        print("Generating node summaries...")
+        add_node_summaries(structure)
 
     processing_time = time.time() - start_time
 
@@ -249,7 +257,7 @@ def assign_pages_to_sections(
     """Assign physical page indices to TOC sections."""
     # Sample pages for matching
     sample_pages = [
-        PageSample(page_num=p.page_num, text=p.text[:500]) for p in pages[:50]
+        PageSample(page_num=p.page_num, text=p.text[:500]) for p in pages[:500]
     ]
 
     # Assign indices
@@ -340,7 +348,23 @@ def add_node_text(nodes: List[TreeNode], pages: List[PageInfo]) -> None:
             add_node_text(node.children, pages)
 
 
+def add_node_summaries(nodes: List[TreeNode]) -> None:
+    """Generate summaries for each node using LLM."""
+    for node in nodes:
+        if node.text:
+            try:
+                node.summary = generate_summary(
+                    title=node.title, text=node.text
+                )
+                print(f"  Generated summary for: {node.title}")
+            except Exception as e:
+                print(f"  Failed to generate summary for '{node.title}': {e}")
+                node.summary = None
+
+        if node.children:
+            add_node_summaries(node.children)
+
+
 response: ProcessingResult = process_pdf(
     pdf_path="/Users/joaopatriota/Downloads/shape-up.pdf"
 )
-breakpoint()
