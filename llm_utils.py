@@ -154,6 +154,23 @@ class TocGenerator(dspy.Signature):
     )
 
 
+class NodeSummarizer(dspy.Signature):
+    """Generate a summary of a document section for navigation.
+
+    Create a concise but informative paragraph (3-5 sentences) that:
+    - Explains the main purpose and key concepts
+    - Mentions important sub-topics covered
+    - Helps users understand if this section is relevant to them
+    - Uses clear, accessible language
+    """
+
+    title: str = dspy.InputField(desc="Section title")
+    text: str = dspy.InputField(desc="Full text content of the section")
+    summary: str = dspy.OutputField(
+        desc="Full paragraph summary of the section"
+    )
+
+
 # ============================================================================
 # Predictor Functions (instantiate at call time)
 # ============================================================================
@@ -245,3 +262,18 @@ def generate_toc(page_samples: list[PageSample]) -> list[SectionWithPageIndex]:
     predictor = dspy.Predict(TocGenerator)
     result = predictor(page_samples=page_samples)
     return result.sections
+
+
+def generate_summary(title: str, text: str) -> str:
+    """Generate a summary for a document section.
+
+    Args:
+        title: Section title
+        text: Full text content of the section
+
+    Returns:
+        Full paragraph summary of the section
+    """
+    predictor = dspy.Predict(NodeSummarizer)
+    result = predictor(title=title, text=text)
+    return result.summary
