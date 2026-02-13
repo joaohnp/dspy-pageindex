@@ -1,209 +1,270 @@
-# PageIndex - Modular Implementation
+# dspy-pageindex
 
-A clean, modular reimplementation of the PageIndex pipeline using Pydantic models and native DSPy signatures.
+A rewrite of PageIndex — a modular, DSPy-first library for extracting structured Table of Contents hierarchies from PDF documents.
 
-## Features
+## What This Is
 
-- **Pydantic Throughout**: All classes use Pydantic BaseModel for validation and serialization
-- **Native DSPy Signatures**: Clean DSPy-style signatures for LLM operations
-- **Hybrid Processing**: Regex-based pattern detection + LLM-based reasoning
-- **Pathlib**: No `os` module usage
-- **Synchronous**: Simple, straightforward execution
-- **OpenRouter Support**: Works with any OpenAI-compatible API
+This is a ground-up rewrite of the original PageIndex project, designed with a singular focus: clean, modular DSPy integration. The original implementation mixed concerns and relied on complex custom LLM handling. This version strips away that complexity and leans into DSPy's signature-based architecture, making every LLM operation explicit, testable, and composable.
 
-## Architecture
+## What It Does
 
-```
-new/
-├── pdf_utils.py      # PDF ingestion and token counting
-├── regexp_utils.py   # Pattern detection and text cleaning
-├── llm_utils.py      # DSPy signatures for TOC processing
-├── main.py           # Pipeline orchestration
-├── requirements.txt  # Dependencies
-├── __init__.py       # Package exports
-└── README.md         # This file
-```
+Takes a PDF and returns a fully navigable tree structure of its contents — chapters, sections, subsections — with page ranges, unique IDs, and optional AI-generated summaries. Perfect for document search, content navigation, or feeding structured content into RAG systems.
 
-## Installation
+## Why This Version
+
+- **DSPy-native**: Every LLM interaction is a clean DSPy signature. No custom prompt templates, no abstraction layers.
+- **Truly modular**: PDF extraction, regex processing, LLM operations, and pipeline orchestration are cleanly separated.
+- **Hybrid intelligence**: Uses regex for speed, LLM for understanding. Fast pattern matching, smart content analysis.
+- **Navigation-ready**: Outputs include node IDs, page ranges, and summaries — everything you need to build a document browser.
+
+## Quick Start
 
 ```bash
-pip install -r requirements.txt
+# Install with uv
+uv sync
+
+
 ```
-
-## Usage
-
-### Setup DSPy with OpenRouter
-
-```python
-import os
-import dspy
-from dotenv import load_dotenv
-
-load_dotenv()
-
-# Configure DSPy with your OpenRouter setup
-lm = dspy.LM(
-    model="openrouter/openai/gpt-4o",
-    api_base=os.getenv("OPEN_ROUTER_BASE_URL"),
-    api_key=os.getenv("OPEN_ROUTER_API_KEY"),
-    max_tokens=80000,
-    cache=False,
-    temperature=0.5,
-)
-dspy.settings.configure(lm=lm)
-```
-
-### Process a PDF
 
 ```python
 from pathlib import Path
-from new import process_pdf
+from main import process_pdf
 
-# Process a PDF
+# Extract structure with summaries for navigation
 result = process_pdf(
     pdf_path=Path("document.pdf"),
-    model="openrouter/openai/gpt-4o"
+    add_summaries=True,
 )
 
 # Get JSON output
 print(result.to_json())
 ```
 
-### Using Individual Signatures
+## Core Features
+
+### Automatic TOC Detection
+
+The pipeline first hunts for an existing Table of Contents using fast regex patterns, then verifies with the LLM. No TOC? No problem — it generates one from the document content.
+
+### Intelligent Structure Extraction
+
+Parses TOC entries into a clean hierarchy: Parts → Chapters → Sections → Subsections. Handles nested structures, numbering schemes, and indentation patterns automatically.
+
+### Page Range Mapping
+
+Maps every section to its actual page span in the PDF. Parent nodes span from their start to their last child's end. Perfect for extracting specific content ranges.
+
+### AI-Powered Summaries
+
+Generate informative paragraph summaries for each section using the actual content. Helps users understand what each section covers before diving in.
+
+### Hierarchical Node IDs
+
+Every node gets a unique, hierarchical ID (`0000`, `0000_0001`, etc.) that reflects its position in the structure. Great for referencing and navigation.
+
+## Pipeline Flow
+
+```
+PDF → Extract Pages → Detect TOC Pages → Extract TOC Content
+                                              ↓
+                                    Transform to Sections
+                                              ↓
+                                    Assign Page Indices
+                                              ↓
+                                    Build Tree Structure
+                                              ↓
+                            [Add Node IDs] → [Add Text] → [Add Summaries]
+                                              ↓
+                                 ProcessingResult (JSON)
+```
+
+## Main Functions
+
+### `process_pdf(pdf_path, ...)` — **The Entry Point**
+
+Orchestrates the entire pipeline. Extracts structure, generates summaries, and returns a complete `ProcessingResult`.
 
 ```python
-from new.llm_utils import detect_toc, extract_toc, Section
-
-# Detect if a page is a TOC
-result = detect_toc(page_text="Table of Contents... Chapter 1...")
-print(result.is_toc_page)  # True or False
-
-# Extract TOC content
-result = extract_toc(page_text="Table of Contents\nChapter 1... Page 1")
-print(result.toc_content)
+result = process_pdf(
+    pdf_path="document.pdf",
+    max_toc_check_pages=20,      # How many pages to scan for TOC
+    max_pages_per_node=10,       # For content-based TOC generation
+    add_node_ids=True,           # Assign hierarchical node IDs
+    add_summaries=True,          # Generate AI summaries (requires text extraction)
+    add_text=True,               # Include full text content
+)
 ```
+
+**Returns:** `ProcessingResult` with `doc_name`, `total_pages`, `structure` (tree), `toc_pages`, `processing_time`
+
+---
+
+### `detect_toc(page_text)` — **Find the Table of Contents**
+
+Uses regex heuristics to identify candidate TOC pages, then verifies with the LLM.
+
+```python
+from llm_utils import detect_toc
+
+is_toc = detect_toc(page_text="Table of Contents\nChapter 1... Page 1")
+# Returns: True
+```
+
+---
+
+### `extract_toc(page_text)` — **Get Clean TOC Content**
+
+Strips away headers, footers, and noise. Returns only the structured TOC entries.
+
+```python
+from llm_utils import extract_toc
+
+toc_content = extract_toc(page_text="Page 5\nTable of Contents\nChapter 1...\nPage 10")
+# Returns: "Chapter 1...\nChapter 2..."
+```
+
+---
+
+### `transform_toc(toc_text)` — **Parse Structure into Objects**
+
+Converts raw TOC text into structured `Section` objects with titles, hierarchy levels, and page numbers.
+
+```python
+from llm_utils import transform_toc
+
+sections = transform_toc(toc_text="1. Introduction\n  1.1 Background\n2. Methods")
+# Returns: [
+#   Section(title="Introduction", level=0, page=1),
+#   Section(title="Background", level=1, page=None),
+#   Section(title="Methods", level=0, page=2)
+# ]
+```
+
+---
+
+### `assign_page_indices(toc_sections, page_samples)` — **Map to Physical Pages**
+
+Matches TOC entries to their actual locations in the PDF using LLM-powered fuzzy matching.
+
+```python
+from llm_utils import assign_page_indices, PageSample
+
+matches = assign_page_indices(
+    toc_sections=sections,
+    page_samples=[PageSample(page_num=5, text="Introduction...")]
+)
+# Returns: [SectionWithPageIndex(title="Introduction", page_index=5, level=0)]
+```
+
+---
+
+### `generate_summary(title, text)` — **Summarize for Navigation**
+
+Creates informative paragraph summaries from section content — perfect for TOC tooltips or preview text.
+
+```python
+from llm_utils import generate_summary
+
+summary = generate_summary(
+    title="Setting Boundaries",
+    text="This section explains how to set clear project boundaries..."
+)
+# Returns: "This section explains the concept of setting boundaries in project..."
+```
+
+---
+
+### `convert_to_tree_nodes(sections)` — **Build the Hierarchy**
+
+Transforms a flat list of sections into a nested tree structure based on hierarchy levels.
+
+---
+
+### `add_node_ids_to_tree(nodes)` — **Assign Unique Identifiers**
+
+Traverses the tree and assigns hierarchical node IDs for reference.
+
+---
+
+### `add_node_text(nodes, pages)` — **Extract Content**
+
+Attaches the full text content to each node based on its page range.
+
+---
+
+### `add_node_summaries(nodes)` — **Generate AI Summaries**
+
+Populates the `summary` field for each node using the `generate_summary` function.
 
 ## DSPy Signatures
 
-All LLM operations are implemented as native DSPy signatures:
+All LLM operations are implemented as clean DSPy signatures:
 
-### `TocDetector`
-Detects if a page contains a Table of Contents.
+| Signature | Purpose |
+|-----------|---------|
+| `TocDetector` | Detect if a page contains a Table of Contents |
+| `TocExtractor` | Extract clean TOC content from a page |
+| `TocTransformer` | Parse TOC text into structured sections |
+| `PageIndexAssigner` | Match sections to physical page indices |
+| `TocVerifier` | Verify a section title appears on a page |
+| `TocGenerator` | Generate TOC from document content (fallback) |
+| `NodeSummarizer` | Generate section summaries for navigation |
+
+## Data Models
+
+### `TreeNode`
+The hierarchical structure representing document organization:
 ```python
-class TocDetector(dspy.Signature):
-    page_text: str = dspy.InputField()
-    is_toc_page: bool = dspy.OutputField()
+class TreeNode(BaseModel):
+    title: str                    # Section title
+    level: int                    # Hierarchy depth (0, 1, 2...)
+    start_page: Optional[int]     # First page number
+    end_page: Optional[int]       # Last page number
+    node_id: Optional[str]        # Unique ID (e.g., "0000_0001")
+    summary: Optional[str]        # AI-generated summary
+    text: Optional[str]          # Full text content
+    children: List["TreeNode"]    # Child sections
 ```
 
-### `TocExtractor`
-Extracts raw TOC content from a page.
+### `ProcessingResult`
+Complete pipeline output:
 ```python
-class TocExtractor(dspy.Signature):
-    page_text: str = dspy.InputField()
-    toc_content: str = dspy.OutputField()
+class ProcessingResult(BaseModel):
+    doc_name: str                 # Document filename
+    total_pages: int              # Total page count
+    structure: List[TreeNode]     # Hierarchical tree
+    toc_pages: List[int]          # Pages where TOC was found
+    processing_time: float       # Seconds to process
+
+    def to_json(self) -> str      # Export to JSON
 ```
 
-### `TocTransformer`
-Transforms TOC text to structured sections.
-```python
-class TocTransformer(dspy.Signature):
-    toc_text: str = dspy.InputField()
-    sections: List[Section] = dspy.OutputField()
-```
-
-### `PageIndexAssigner`
-Matches TOC entries to physical page indices.
-```python
-class PageIndexAssigner(dspy.Signature):
-    toc_entries: List[Section] = dspy.InputField()
-    page_samples: str = dspy.InputField()
-    matches: List[SectionWithPageIndex] = dspy.OutputField()
-```
-
-### `TocVerifier`
-Verifies if a section title appears on a page.
-```python
-class TocVerifier(dspy.Signature):
-    title: str = dspy.InputField()
-    page_text: str = dspy.InputField()
-    is_present: bool = dspy.OutputField()
-```
-
-### `TocGenerator`
-Generates TOC from document content when none exists.
-```python
-class TocGenerator(dspy.Signature):
-    page_samples: str = dspy.InputField()
-    sections: List[SectionWithPageIndex] = dspy.OutputField()
-```
-
-## Pydantic Models
-
-All data structures are Pydantic models:
-
-- `Section`: TOC section with title, level, and optional page number
-- `SectionWithPageIndex`: Section with assigned physical page index
-- `TreeNode`: Hierarchical tree node with children
-- `PageInfo`: PDF page with text and token count
-- `ProcessingResult`: Complete pipeline result
-- `PipelineConfig`: Configuration options
-
-## CLI Usage
-
-```bash
-# Set API key
-export OPEN_ROUTER_API_KEY="your-api-key"
-export OPEN_ROUTER_BASE_URL="https://openrouter.ai/api/v1"
-
-# Configure DSPy in your script, then:
-python -m new.main document.pdf
-
-# Save to file
-python -m new.main document.pdf -o output.json
-
-# Include full text
-python -m new.main document.pdf --add-text
-```
-
-## Configuration
-
-```python
-from new import PipelineConfig
-
-config = PipelineConfig(
-    model="openrouter/openai/gpt-4o",
-    max_toc_check_pages=20,
-    max_pages_per_node=10,
-    add_node_ids=True,
-    add_summaries=False,
-    add_text=False
-)
-
-result = process_pdf("document.pdf", **config.dict())
-```
-
-## Output Format
+## Output Example
 
 ```json
 {
-  "doc_name": "document",
-  "total_pages": 150,
-  "toc_pages": [2, 3],
-  "processing_time": 45.2,
+  "doc_name": "shape-up",
+  "total_pages": 176,
+  "toc_pages": [1, 2, 6],
+  "processing_time": 42.3,
   "structure": [
     {
       "title": "Introduction",
       "level": 0,
-      "start_page": 5,
-      "end_page": 10,
-      "node_id": "0000",
+      "start_page": 11,
+      "end_page": 16,
+      "node_id": "0002",
+      "summary": "This chapter introduces the Shape Up methodology...",
+      "text": "Full text content...",
       "children": [
         {
-          "title": "Background",
+          "title": "Growing pains",
           "level": 1,
-          "start_page": 5,
-          "end_page": 7,
-          "node_id": "0000_0000"
+          "start_page": 11,
+          "end_page": 13,
+          "node_id": "0002_0000",
+          "summary": "Describes common challenges teams face...",
+          "children": []
         }
       ]
     }
@@ -211,32 +272,18 @@ result = process_pdf("document.pdf", **config.dict())
 }
 ```
 
-## Pipeline Flow
+## Use Cases
 
-1. **PDF Ingestion**: Extract text using PyPDF2
-2. **TOC Detection**: Regex heuristics + DSPy `TocDetector`
-3. **TOC Extraction**: DSPy `TocExtractor`
-4. **Structure Transformation**: DSPy `TocTransformer` → `List[Section]`
-5. **Page Index Assignment**: DSPy `PageIndexAssigner` → `List[SectionWithPageIndex]`
-6. **Tree Construction**: Build hierarchical `TreeNode` objects
-7. **Metadata Addition**: Add node IDs, text content (optional)
+- **Document Search**: Index books, reports, and papers for semantic search
+- **Content Navigation**: Build interactive TOC widgets with preview summaries
+- **RAG Pipelines**: Feed structured chunks into retrieval systems
+- **Document Analysis**: Analyze document structure and organization patterns
+- **PDF Processing**: Extract and organize content at scale
 
-## Design Principles
+## Design Philosophy
 
-1. **Pydantic Everywhere**: All classes inherit from BaseModel
-2. **DSPy Native**: Clean signatures matching DSPy conventions
-3. **Type Safety**: Full type hints
-4. **Pathlib**: No `os.path` usage
-5. **Minimal Boilerplate**: Leverage DSPy for LLM operations
+1. **DSPy First**: Leverage DSPy's strengths — signatures, declarative prompts, and clean abstractions
+2. **Modular Components**: Every function is independently testable and reusable
+3. **Type Safety**: Pydantic models everywhere — catch errors before they propagate
+4. **Hybrid Approach**: Use regex for speed, LLM for intelligence. Don't use an LLM when a pattern will do.
 
-## Dependencies
-
-- `pypdf2>=3.0.0` - PDF text extraction
-- `tiktoken>=0.5.0` - Token counting
-- `dspy-ai>=2.0.0` - LLM framework
-- `pydantic>=2.0.0` - Data validation
-- `python-dotenv>=1.0.0` - Environment variables
-
-## License
-
-Same as the original PageIndex project.
