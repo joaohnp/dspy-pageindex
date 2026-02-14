@@ -349,9 +349,11 @@ def add_node_text(nodes: List[TreeNode], pages: List[PageInfo]) -> None:
 
 
 def add_node_summaries(nodes: List[TreeNode]) -> None:
-    """Generate summaries for each node using LLM."""
+    """Generate summaries for leaf nodes only (nodes with no children)."""
     for node in nodes:
-        if node.text:
+        if node.children:
+            add_node_summaries(node.children)
+        elif node.text:
             try:
                 node.summary = generate_summary(
                     title=node.title, text=node.text
@@ -361,10 +363,8 @@ def add_node_summaries(nodes: List[TreeNode]) -> None:
                 print(f"  Failed to generate summary for '{node.title}': {e}")
                 node.summary = None
 
-        if node.children:
-            add_node_summaries(node.children)
-
 
 response: ProcessingResult = process_pdf(
     pdf_path="/Users/joaopatriota/Downloads/shape-up.pdf"
 )
+print(response.to_json())
